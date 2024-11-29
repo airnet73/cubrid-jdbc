@@ -87,6 +87,7 @@ public class CUBRIDDriver implements Driver {
             "jdbc:cubrid(-oracle|-mysql)?:([a-zA-Z_0-9\\.-]*):([0-9]*):([^:]+):([^:]*):([^:]*):(\\?[a-zA-Z_0-9]+=[^&=?]+(&[a-zA-Z_0-9]+=[^&=?]+)*)?";
     private static final String CUBRID_JDBC_URL_HEADER = "jdbc:cubrid";
     private static final String ENV_JDBC_PROP_NAME = "CUBRID_JDBC_PROP";
+    private int conn_count = 0;
 
     static {
         try {
@@ -265,15 +266,17 @@ public class CUBRIDDriver implements Driver {
                 altHostList.add(st.nextToken());
             }
 
-            if (connProperties.getConnLoadBal()) {
-                Collections.shuffle(altHostList);
-            }
-            try {
-                u_con =
-                        (UClientSideConnection)
-                                UJCIManager.connect(altHostList, db, user, pass, resolvedUrl);
-            } catch (CUBRIDException e) {
-                throw e;
+            String loadBalValue = connProperties.getConnLoadBal();
+
+            synchronized (this) {
+                adjustHostList(loadBalValue, altHostList);
+                try {
+                    u_con =
+                            (UClientSideConnection)
+                                    UJCIManager.connect(altHostList, db, user, pass, resolvedUrl);
+                } catch (CUBRIDException e) {
+                    throw e;
+                }
             }
         } else {
             try {
@@ -345,5 +348,32 @@ public class CUBRIDDriver implements Driver {
     private boolean existPropertiesFile(String filePath) {
         File file = new File(filePath);
         return file.exists();
+    }
+
+    private void adjustHostList(String loadBalValue, ArrayList<String> altHostList) {
+        switch (loadBalValue) {
+            case ConnectionProperties.LB_VAL_TRUE:
+                Collections.shuffle(altHostList);
+                break;
+            case ConnectionProperties.LB_VAL_FALSE:
+                break;
+            case ConnectionProperties.LB_VAL_ROUND_ROBIN:
+                conn_count++;
+                int index =
+                        (conn_count > altHostList.size())
+                                ? (conn_count - 1) % altHostList.size()
+                                : conn_count - 1;
+                Collections.rotate(altHostList, -index);
+
+                if (conn_count >= Integer.MAX_VALUE) {
+                    conn_count = 0;
+                }
+                break;
+            case ConnectionProperties.LB_VAL_SHUFFLE:
+                Collections.shuffle(altHostList);
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid loadBalValue: " + loadBalValue);
+        }
     }
 }
