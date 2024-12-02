@@ -364,7 +364,7 @@ public class CUBRIDDriver implements Driver {
     }
 
     private synchronized int increment_conn_count() {
-        conn_count = conn_count + 1;
+        conn_count = (conn_count >= Integer.MAX_VALUE) ? 1 : conn_count + 1;
         return conn_count;
     }
 }
